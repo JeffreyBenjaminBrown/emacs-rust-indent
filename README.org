@@ -248,3 +248,43 @@ Adjust the path here to your liking.
            count
          } > 1   ;; <-- now at col 7, matching the opening {
   #+end_src
+
+*** "( expr (" patterns
+
+**** The Problem
+
+  When a paren block starts with an expression containing another paren, content
+  inside the inner paren aligns to the expression instead of being indented beyond it:
+
+  #+begin_src rust
+  let alias_col_id : Option<NodeId> =
+    ( unique_orgnode_child_with_interp (
+      tree, node_id, Interp::AliasCol )   ;; <-- aligned to 'unique_orgnode'
+      . map_err ( |e| e.to_string() ) ? );
+  #+end_src
+
+  Should be:
+
+  #+begin_src rust
+  let alias_col_id : Option<NodeId> =
+    ( unique_orgnode_child_with_interp (
+        tree, node_id, Interp::AliasCol )   ;; <-- indented beyond 'unique_orgnode'
+      . map_err ( |e| e.to_string() ) ? );
+  #+end_src
+
+**** The Cause
+
+  Same root cause as ~{ expr (~: rust-mode aligns to the first expression after
+  the opening bracket, which is ~unique_orgnode_child_with_interp~. Content inside
+  the inner ~(~ then aligns to that expression instead of being indented beyond it.
+
+**** The Solution
+
+  The fix extends the ~{ expr (~ logic to also detect when we're inside a paren
+  whose line starts with ~(~ or ~[~ (with inline content), where that outer bracket
+  is different from the one we're inside. In that case, it adds ~rust-indent-offset~
+  to rust-mode's calculated indentation.
+
+  The fix carefully distinguishes this from simple cases like ~( x, y )~ where
+  the paren at the start of the line IS the one we're inside - those cases should
+  NOT get extra indentation.

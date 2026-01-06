@@ -278,7 +278,41 @@ f( &x,
 (test-indent test-blank-line-code 6 0 "f( after blank line (reset to 0)")
 
 ;;; ============================================================
-;;; Issue 9: Brace blocks with inline content (match arms)
+;;; Issue 9: ( expr ( paren content indentation
+;;; ============================================================
+
+(defvar test-paren-expr-paren-code "
+fn example() {
+let alias_col_id : Option<NodeId> =
+  ( unique_orgnode_child_with_interp (
+    tree, node_id, Interp::AliasCol )
+    . map_err ( |e| e.to_string() ) ? );
+}
+")
+
+;; Line numbers (1-indexed):
+;; 1: empty
+;; 2: fn example() {
+;; 3: let alias_col_id...
+;; 4:   ( unique_orgnode_child_with_interp (  <- outer ( at col 2, inner ( at end
+;; 5:     tree, node_id...  <- should be 6 (4 + offset), not 4
+;; 6:     . map_err...
+
+(message "")
+(message "=== Issue 9: ( expr ( paren content indentation ===")
+(test-indent test-paren-expr-paren-code 5 6 "tree (inside nested paren on paren line)")
+
+;; Non-regression: simple ( x, y ) should NOT add extra indent
+(defvar test-simple-paren-code "
+( x,
+y )
+")
+
+;; y should align with x at col 2, not col 4
+(test-indent test-simple-paren-code 3 2 "y in ( x, y ) (no extra indent)")
+
+;;; ============================================================
+;;; Issue 10: Brace blocks with inline content (match arms)
 ;;; ============================================================
 
 (defvar test-match-arm-code1 "
@@ -298,7 +332,7 @@ fn example() {
 ;; Both cases: { at col 4, continuation should be at col 8
 
 (message "")
-(message "=== Issue 9: Brace blocks with inline content ===")
+(message "=== Issue 10: Brace blocks with inline content ===")
 (test-indent test-match-arm-code1 4 8 "=> on second line (match arm)")
 (test-indent test-match-arm-code2 4 8 "body on second line (match arm)")
 

@@ -144,7 +144,9 @@ Returns nil if not inside a paren/bracket."
           (current-column))))))
 
 (defun rust-indent-fix--any-enclosing-paren-on-brace-line-p ()
-  "Return t if any enclosing paren/bracket is on a line that starts with `{'.
+  "Return t if any enclosing paren/bracket is on a line that starts with `{',
+or starts with `(' or `[' with inline content (where the starting bracket
+is different from the one we're inside).
 Walks up through parens/brackets only, stopping when a brace is encountered."
   (save-excursion
     (let ((found nil))
@@ -152,11 +154,23 @@ Walks up through parens/brackets only, stopping when a brace is encountered."
         (ignore-errors
           (backward-up-list)
           (if (looking-at "[][()]")
-              ;; It's a paren/bracket - check if its line starts with {
-              (save-excursion
-                (back-to-indentation)
-                (when (eq (char-after) ?{)
-                  (setq found t)))
+              ;; It's a paren/bracket - check if its line starts with a bracket
+              (let ((paren-pos (point)))
+                (save-excursion
+                  (back-to-indentation)
+                  (cond
+                   ;; Line starts with { - always triggers the fix
+                   ((eq (char-after) ?{)
+                    (setq found t))
+                   ;; Line starts with ( or [ - only triggers if:
+                   ;; 1. The bracket at start of line is NOT the one we just found
+                   ;; 2. There's inline content after the bracket
+                   ((and (looking-at "[][()]")
+                         (not (= (point) paren-pos)))
+                    (forward-char)
+                    (skip-chars-forward "[:space:]")
+                    (when (not (eolp))
+                      (setq found t))))))
             ;; It's a brace - stop walking up the chain
             (setq found 'stop))))
       (eq found t))))
