@@ -99,6 +99,21 @@ This detects single-line definitions where the result should be indented further
         (backward-up-list)
         (looking-at "{[[:space:]]*\\(if[[:space:]]+\\)?let\\b")))))
 
+(defun rust-indent-fix--enclosing-brace-has-inline-content-p ()
+  "Return t if enclosing `{' has non-trivial content on the same line.
+This detects patterns like `{ Ok(Some(x))' or `{ expr' where the brace
+is followed by code on the same line (not just whitespace or comments)."
+  (save-excursion
+    (when (> (rust-paren-level) 0)
+      (ignore-errors
+        (backward-up-list)
+        (when (eq (char-after) ?{)
+          (forward-char)
+          (skip-chars-forward "[:space:]")
+          ;; Check if there's non-comment content before end of line
+          (and (not (eolp))
+               (not (looking-at "//"))))))))
+
 (defun rust-indent-fix--enclosing-paren-starts-with-brace-p ()
   "Return t if enclosing `(' or `[' has `{' as its first non-whitespace content."
   (save-excursion
@@ -201,6 +216,12 @@ Returns corrected column or nil if no correction needed."
              (= (rust-paren-level) 0))
     0))
 
+(defun rust-indent-fix--indent-for-brace-with-inline-content (rust-mode-calculated-indent)
+  "Calculate indent for continuation inside `{ content' blocks.
+RUST-MODE-CALCULATED-INDENT is what rust-mode computed.
+This handles patterns like `{ Ok(Some(x))' in match arms."
+  (+ rust-mode-calculated-indent rust-indent-offset))
+
 ;;;; Main Dispatch
 
 (defun rust-indent-fix--calculate-corrected-indentation ()
@@ -224,7 +245,13 @@ Returns corrected column or nil if no correction needed."
         (rust-indent-fix--indent-for-paren-on-brace-line rust-mode-calculated-indent))
 
        ;; Fix alignment when first paren argument starts with punctuation like &
-       ((rust-indent-fix--indent-for-paren-with-punctuation-arg rust-mode-calculated-indent))))))
+       ((rust-indent-fix--indent-for-paren-with-punctuation-arg rust-mode-calculated-indent))
+
+       ;; Inside `{ content' blocks (like match arms), add extra indentation
+       ;; for continuation lines (but not lines starting with `}')
+       ((and (rust-indent-fix--enclosing-brace-has-inline-content-p)
+             (not (rust-indent-fix--line-starts-with-closing-brace-p)))
+        (rust-indent-fix--indent-for-brace-with-inline-content rust-mode-calculated-indent))))))
 
 ;;;; Advice and Public Interface
 

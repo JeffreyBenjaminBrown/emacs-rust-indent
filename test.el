@@ -278,6 +278,31 @@ f( &x,
 (test-indent test-blank-line-code 6 0 "f( after blank line (reset to 0)")
 
 ;;; ============================================================
+;;; Issue 9: Brace blocks with inline content (match arms)
+;;; ============================================================
+
+(defvar test-match-arm-code1 "
+fn example() {
+    { Ok(Some(id)) if &id == target_skgid
+      => return Ok(true),
+      Ok(_) => continue, }}
+")
+
+(defvar test-match-arm-code2 "
+fn example() {
+    { Ok(Some(id)) if &id == target_skgid =>
+      return Ok(true),
+      Ok(_) => continue, }}
+")
+
+;; Both cases: { at col 4, continuation should be at col 8
+
+(message "")
+(message "=== Issue 9: Brace blocks with inline content ===")
+(test-indent test-match-arm-code1 4 8 "=> on second line (match arm)")
+(test-indent test-match-arm-code2 4 8 "body on second line (match arm)")
+
+;;; ============================================================
 ;;; Summary
 ;;; ============================================================
 
