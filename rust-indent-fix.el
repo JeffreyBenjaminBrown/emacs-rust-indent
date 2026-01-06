@@ -15,11 +15,14 @@
 ;; 3. In `{ expr (...', content inside the paren aligns to `expr' instead
 ;;    of being indented by rust-indent-offset beyond `expr'.
 ;;
-;; 4. Closing `}' of a `{ let }' block misaligns with its opening `{'.
+;; 4. Closing `}' and result expressions of `{ let }' blocks misalign with
+;;    the opening `{'.
 
 ;;; Code:
 
 (require 'rust-mode)
+
+;;;; Configuration
 
 (defcustom rust-indent-fix-enabled t
   "When non-nil, apply indentation fixes for brace-binding patterns."
@@ -29,43 +32,27 @@
 (defvar rust-indent-fix--recursion-guard nil
   "Prevents infinite recursion when our advice calls the original indent function.")
 
-(defun rust-indent-fix--inside-brace-binding-block-p ()
-  "Return t if point's immediately enclosing bracket is `{ let' or `{ if let'."
+;;;; Navigation Helpers
+
+(defun rust-indent-fix--enclosing-bracket-column ()
+  "Return column of the immediately enclosing bracket, or nil if at top level."
   (save-excursion
     (when (> (rust-paren-level) 0)
       (ignore-errors
         (backward-up-list)
-        (looking-at "{[[:space:]]*\\(if[[:space:]]+\\)?let\\b")))))
+        (current-column)))))
 
-(defun rust-indent-fix--at-block-result-expression-p ()
-  "Return t if current line is the result expression (after the let's semicolon)."
-  (save-excursion
-    (forward-line -1)
-    (end-of-line)
-    (skip-chars-backward "[:space:]")
-    (eq (char-before) ?\;)))
-
-(defun rust-indent-fix--brace-column-when-first-in-paren ()
-  "If enclosing paren/bracket starts with `{', return the `{' column, else nil.
-This detects patterns like `( { let' or `[ { let'."
+(defun rust-indent-fix--enclosing-brace-column ()
+  "Return column of enclosing `{', or nil if enclosing bracket isn't `{'."
   (save-excursion
     (when (> (rust-paren-level) 0)
       (ignore-errors
         (backward-up-list)
-        (when (looking-at "[][()]")
-          (forward-char)
-          (skip-chars-forward "[:space:]")
-          (when (eq (char-after) ?{)
-            (current-column)))))))
+        (when (eq (char-after) ?{)
+          (current-column))))))
 
-(defun rust-indent-fix--line-starts-with-closing-brace-p ()
-  "Return t if current line starts with `}'."
-  (save-excursion
-    (back-to-indentation)
-    (eq (char-after) ?})))
-
-(defun rust-indent-fix--opening-brace-column ()
-  "Return the column of the opening `{' for a line starting with `}'."
+(defun rust-indent-fix--matching-open-brace-column ()
+  "If line starts with `}', return column of its matching `{'. Else nil."
   (save-excursion
     (back-to-indentation)
     (when (eq (char-after) ?})
@@ -74,49 +61,49 @@ This detects patterns like `( { let' or `[ { let'."
         (backward-sexp)
         (current-column)))))
 
-(defun rust-indent-fix--enclosing-brace-column ()
-  "Return the column of the enclosing `{' bracket."
+;;;; Line Classification Predicates
+
+(defun rust-indent-fix--line-starts-with-closing-brace-p ()
+  "Return t if current line's first non-whitespace char is `}'."
+  (save-excursion
+    (back-to-indentation)
+    (eq (char-after) ?})))
+
+(defun rust-indent-fix--previous-line-ends-with-semicolon-p ()
+  "Return t if previous line ends with `;' (ignoring trailing whitespace)."
+  (save-excursion
+    (forward-line -1)
+    (end-of-line)
+    (skip-chars-backward "[:space:]")
+    (eq (char-before) ?\;)))
+
+(defun rust-indent-fix--enclosing-bracket-is-brace-let-p ()
+  "Return t if immediately enclosing bracket is `{ let' or `{ if let'."
   (save-excursion
     (when (> (rust-paren-level) 0)
       (ignore-errors
         (backward-up-list)
-        (when (eq (char-after) ?{)
-          (current-column))))))
+        (looking-at "{[[:space:]]*\\(if[[:space:]]+\\)?let\\b")))))
 
-(defun rust-indent-fix--brace-binding-continuation-indent (rust-mode-indent)
-  "Indent for continuation lines inside `{ let' or `{ if let' blocks.
-RUST-MODE-INDENT is what rust-mode calculated. Returns corrected indent."
-  (cond
-   ;; Line starts with } - align with opening {
-   ((rust-indent-fix--line-starts-with-closing-brace-p)
-    (rust-indent-fix--opening-brace-column))
-   ;; Result expression (after semicolon) - align with opening {
-   ((rust-indent-fix--at-block-result-expression-p)
-    (rust-indent-fix--enclosing-brace-column))
-   ;; Continuation line - add offset
-   (t
-    (+ rust-mode-indent rust-indent-offset))))
-
-(defun rust-indent-fix--paren-containing-brace-indent (rust-mode-indent)
-  "Indent for lines inside `( {' or `[ {' where rust-mode over-indented.
-RUST-MODE-INDENT is what rust-mode calculated. Returns the brace column
-if rust-mode aligned to content after the brace instead of the brace itself."
-  (let ((brace-column (rust-indent-fix--brace-column-when-first-in-paren)))
-    (when (and brace-column (> rust-mode-indent brace-column))
-      brace-column)))
-
-(defun rust-indent-fix--inside-paren-on-brace-line-p ()
-  "Return t if inside a paren/bracket chain that includes a brace-line paren.
-This detects patterns like `{ expr (' where content inside the paren
-needs extra indentation. Also handles nested parens where an ancestor
-paren is on a brace line."
+(defun rust-indent-fix--enclosing-paren-starts-with-brace-p ()
+  "Return t if enclosing `(' or `[' has `{' as its first non-whitespace content."
   (save-excursion
     (when (> (rust-paren-level) 0)
       (ignore-errors
         (backward-up-list)
-        ;; Only applies inside parens/brackets, not braces
         (when (looking-at "[][()]")
-          ;; Check if this paren's line or any ancestor paren's line starts with {
+          (forward-char)
+          (skip-chars-forward "[:space:]")
+          (eq (char-after) ?{))))))
+
+(defun rust-indent-fix--any-enclosing-paren-on-brace-line-p ()
+  "Return t if any enclosing paren/bracket is on a line that starts with `{'.
+Walks up the bracket chain looking for this pattern."
+  (save-excursion
+    (when (> (rust-paren-level) 0)
+      (ignore-errors
+        (backward-up-list)
+        (when (looking-at "[][()]")
           (let ((found nil))
             (while (and (not found) (> (rust-paren-level) 0))
               (back-to-indentation)
@@ -125,25 +112,57 @@ paren is on a brace line."
                 (backward-up-list)))
             found))))))
 
-(defun rust-indent-fix--paren-on-brace-line-indent (rust-mode-indent)
-  "Indent for lines inside a paren whose line starts with `{'.
-RUST-MODE-INDENT is what rust-mode calculated. Returns indent + offset."
-  (+ rust-mode-indent rust-indent-offset))
+;;;; Indentation Calculation for Each Case
+
+(defun rust-indent-fix--indent-for-brace-binding-block (rust-mode-calculated-indent)
+  "Calculate indent for a line inside a `{ let }' or `{ if let }' block.
+RUST-MODE-CALCULATED-INDENT is what rust-mode computed."
+  (cond
+   ((rust-indent-fix--line-starts-with-closing-brace-p)
+    (rust-indent-fix--matching-open-brace-column))
+   ((rust-indent-fix--previous-line-ends-with-semicolon-p)
+    (rust-indent-fix--enclosing-brace-column))
+   (t
+    (+ rust-mode-calculated-indent rust-indent-offset))))
+
+(defun rust-indent-fix--indent-for-paren-starting-with-brace (rust-mode-calculated-indent)
+  "Calculate indent when inside `( {' or `[ {' - align to the `{'.
+RUST-MODE-CALCULATED-INDENT is what rust-mode computed.
+Returns corrected column or nil if no correction needed."
+  (save-excursion
+    (when (> (rust-paren-level) 0)
+      (ignore-errors
+        (backward-up-list)
+        (when (looking-at "[][()]")
+          (forward-char)
+          (skip-chars-forward "[:space:]")
+          (when (eq (char-after) ?{)
+            (let ((brace-column (current-column)))
+              (when (> rust-mode-calculated-indent brace-column)
+                brace-column))))))))
+
+(defun rust-indent-fix--indent-for-paren-on-brace-line (rust-mode-calculated-indent)
+  "Calculate indent when inside a paren whose line starts with `{'.
+RUST-MODE-CALCULATED-INDENT is what rust-mode computed."
+  (+ rust-mode-calculated-indent rust-indent-offset))
+
+;;;; Main Dispatch
 
 (defun rust-indent-fix--calculate-corrected-indentation ()
   "Return corrected indentation for current line, or nil if no correction needed."
   (save-excursion
     (back-to-indentation)
-    (let ((rust-mode-indent (current-column)))
+    (let ((rust-mode-calculated-indent (current-column)))
       (cond
-       ;; Case 1: Inside { let } or { if let } block
-       ((rust-indent-fix--inside-brace-binding-block-p)
-        (rust-indent-fix--brace-binding-continuation-indent rust-mode-indent))
-       ;; Case 2: Inside ( { ... or [ { ... - align to the {
-       ((rust-indent-fix--paren-containing-brace-indent rust-mode-indent))
-       ;; Case 3: Inside paren on a line starting with { - add offset
-       ((rust-indent-fix--inside-paren-on-brace-line-p)
-        (rust-indent-fix--paren-on-brace-line-indent rust-mode-indent))))))
+       ((rust-indent-fix--enclosing-bracket-is-brace-let-p)
+        (rust-indent-fix--indent-for-brace-binding-block rust-mode-calculated-indent))
+
+       ((rust-indent-fix--indent-for-paren-starting-with-brace rust-mode-calculated-indent))
+
+       ((rust-indent-fix--any-enclosing-paren-on-brace-line-p)
+        (rust-indent-fix--indent-for-paren-on-brace-line rust-mode-calculated-indent))))))
+
+;;;; Advice and Public Interface
 
 (defun rust-indent-fix--indent-line-advice (orig-fun &rest args)
   "Advice wrapping `rust-mode--indent-line' to apply our indentation fixes."
