@@ -110,6 +110,24 @@ This detects single-line definitions where the result should be indented further
           (skip-chars-forward "[:space:]")
           (eq (char-after) ?{))))))
 
+(defun rust-indent-fix--previous-line-is-blank-p ()
+  "Return t if previous line is blank or only whitespace."
+  (save-excursion
+    (forward-line -1)
+    (looking-at "^[[:space:]]*$")))
+
+(defun rust-indent-fix--enclosing-paren-first-content-column ()
+  "Return column of first non-whitespace content after enclosing `(' or `['.
+Returns nil if not inside a paren/bracket."
+  (save-excursion
+    (when (> (rust-paren-level) 0)
+      (ignore-errors
+        (backward-up-list)
+        (when (looking-at "[][()]")
+          (forward-char)
+          (skip-chars-forward "[:space:]\n")
+          (current-column))))))
+
 (defun rust-indent-fix--any-enclosing-paren-on-brace-line-p ()
   "Return t if any enclosing paren/bracket is on a line that starts with `{'.
 Walks up through parens/brackets only, stopping when a brace is encountered."
@@ -168,6 +186,21 @@ Returns corrected column or nil if no correction needed."
 RUST-MODE-CALCULATED-INDENT is what rust-mode computed."
   (+ rust-mode-calculated-indent rust-indent-offset))
 
+(defun rust-indent-fix--indent-for-paren-with-punctuation-arg (rust-mode-calculated-indent)
+  "Correct indent when paren's first arg starts with punctuation like `&'.
+RUST-MODE-CALCULATED-INDENT is what rust-mode computed.
+Returns corrected column or nil if no correction needed."
+  (let ((first-content-col (rust-indent-fix--enclosing-paren-first-content-column)))
+    (when (and first-content-col
+               (> rust-mode-calculated-indent first-content-col))
+      first-content-col)))
+
+(defun rust-indent-fix--indent-after-blank-line ()
+  "Return 0 if previous line is blank and we're at top level, else nil."
+  (when (and (rust-indent-fix--previous-line-is-blank-p)
+             (= (rust-paren-level) 0))
+    0))
+
 ;;;; Main Dispatch
 
 (defun rust-indent-fix--calculate-corrected-indentation ()
@@ -176,6 +209,9 @@ RUST-MODE-CALCULATED-INDENT is what rust-mode computed."
     (back-to-indentation)
     (let ((rust-mode-calculated-indent (current-column)))
       (cond
+       ;; After blank line at top level, reset to column 0
+       ((rust-indent-fix--indent-after-blank-line))
+
        ((rust-indent-fix--enclosing-bracket-is-brace-let-p)
         (rust-indent-fix--indent-for-brace-binding-block rust-mode-calculated-indent))
 
@@ -185,7 +221,10 @@ RUST-MODE-CALCULATED-INDENT is what rust-mode computed."
        ;; A line starting with `{' is a new brace block, not content to be indented.
        ((and (rust-indent-fix--any-enclosing-paren-on-brace-line-p)
              (not (rust-indent-fix--line-starts-with-open-brace-p)))
-        (rust-indent-fix--indent-for-paren-on-brace-line rust-mode-calculated-indent))))))
+        (rust-indent-fix--indent-for-paren-on-brace-line rust-mode-calculated-indent))
+
+       ;; Fix alignment when first paren argument starts with punctuation like &
+       ((rust-indent-fix--indent-for-paren-with-punctuation-arg rust-mode-calculated-indent))))))
 
 ;;;; Advice and Public Interface
 

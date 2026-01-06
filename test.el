@@ -236,6 +236,48 @@ for edge in forest.root().traverse() {
 (test-indent test-compact-brace-let-code 10 8 "node_triples (multi-line result, let-col)")
 
 ;;; ============================================================
+;;; Issue 7: Punctuation in first paren argument
+;;; ============================================================
+
+(defvar test-punctuation-arg-code "
+f( &x,
+y,
+z )
+")
+
+;; Line numbers (1-indexed):
+;; 1: empty
+;; 2: f( &x,  <- & at col 3
+;; 3: y,      <- should be 3 (align with &, not with x)
+
+(message "")
+(message "=== Issue 7: Punctuation in first paren argument ===")
+(test-indent test-punctuation-arg-code 3 3 "y after f(&x, (align with &)")
+
+;;; ============================================================
+;;; Issue 8: Blank line resets top-level indent
+;;; ============================================================
+
+(defvar test-blank-line-code "
+f( x,
+   &y,
+   z)
+
+f( &x,
+   y )
+")
+
+;; Line numbers (1-indexed):
+;; 1: empty
+;; 2-4: first f(...)
+;; 5: blank line
+;; 6: f( &x,  <- should be 0 (reset after blank line)
+
+(message "")
+(message "=== Issue 8: Blank line resets top-level indent ===")
+(test-indent test-blank-line-code 6 0 "f( after blank line (reset to 0)")
+
+;;; ============================================================
 ;;; Summary
 ;;; ============================================================
 
