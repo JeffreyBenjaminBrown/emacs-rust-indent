@@ -1,1 +1,13 @@
-tests-distilled.rs is the source of truth for tests.
+* To hot-reload the code
+Adjust the path here to your liking.
+
+#+begin_src elisp
+(progn
+  (rust-indent-fix-disable)
+  (load-file "~/hodal/skg/rust-indent/rust-indent-fix.el")
+  (rust-indent-fix-enable))
+#+end_src
+* How to read and update the tests
+  tests-distilled.rs is the source of truth for tests.
+
+  tests.el, which is less readable, is auto-generated from it.
