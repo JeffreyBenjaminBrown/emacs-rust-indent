@@ -29,8 +29,6 @@
 
 ;;; Code:
 
-(require 'cl-lib)
-
 ;; We'll use rust-indent-offset from rust-mode when available
 (defvar rust-indent-offset)
 
@@ -58,12 +56,6 @@
   "Return non-nil if point is inside a comment."
   (nth 4 (syntax-ppss)))
 
-(defun jbb-rust--column-at (pos)
-  "Return column at position POS."
-  (save-excursion
-    (goto-char pos)
-    (current-column)))
-
 (defun jbb-rust--prev-line-blank-p ()
   "Return non-nil if previous line is blank."
   (save-excursion
@@ -82,17 +74,41 @@
   "Return non-nil if previous non-blank line ends with semicolon."
   (save-excursion
     (forward-line -1)
+    (while (and (not (bobp)) (looking-at-p "^[[:space:]]*$"))
+      (forward-line -1))
     (end-of-line)
     (skip-chars-backward " \t")
     (eq (char-before) ?\;)))
 
 (defun jbb-rust--prev-line-ends-semicolon-or-comma-p ()
-  "Return non-nil if previous line ends with semicolon or comma."
+  "Return non-nil if previous non-blank line ends with semicolon or comma."
   (save-excursion
     (forward-line -1)
+    (while (and (not (bobp)) (looking-at-p "^[[:space:]]*$"))
+      (forward-line -1))
     (end-of-line)
     (skip-chars-backward " \t")
     (memq (char-before) '(?\; ?,))))
+
+(defun jbb-rust--prev-line-ends-close-brace-p ()
+  "Return non-nil if previous non-blank line ends with closing brace }."
+  (save-excursion
+    (forward-line -1)
+    (while (and (not (bobp)) (looking-at-p "^[[:space:]]*$"))
+      (forward-line -1))
+    (end-of-line)
+    (skip-chars-backward " \t")
+    (eq (char-before) ?})))
+
+(defun jbb-rust--prev-line-ends-equals-p ()
+  "Return non-nil if previous non-blank line ends with equals sign."
+  (save-excursion
+    (forward-line -1)
+    (while (and (not (bobp)) (looking-at-p "^[[:space:]]*$"))
+      (forward-line -1))
+    (end-of-line)
+    (skip-chars-backward " \t")
+    (eq (char-before) ?=)))
 
 (defun jbb-rust--first-content-after (pos)
   "Return column of first content after POS on same line, or nil if none.
@@ -191,12 +207,10 @@ Searches backward from current line for a lambda header."
             (while (< (line-number-at-pos) orig-line)
               (back-to-indentation)
               (cond
-               ;; |...| with inline body (not brace)
-               ((looking-at "|[^|\n]*|[ \t]*\\([^{ \t\n]\\)")
-                (let ((body-col (save-excursion
-                                  (goto-char (match-beginning 1))
-                                  (current-column))))
-                  (throw 'found body-col)))
+               ;; |...| with inline body (not brace) - indent from lambda position
+               ((looking-at "|[^|\n]*|[ \t]*[^{ \t\n]")
+                (let ((lambda-col (current-column)))
+                  (throw 'found (+ lambda-col (jbb-rust--indent-offset)))))
                ;; |...| alone on line (body on next line)
                ((looking-at "|[^|\n]*|[ \t]*$")
                 (let ((lambda-col (current-column)))
@@ -236,20 +250,15 @@ Searches backward from current line for a lambda header."
      ((looking-at-p "[])}]")
       (or (jbb-rust--matching-bracket-column) 0))
 
-     ;; At top level with blank line before: column 0
-     ((and (= (jbb-rust--bracket-depth) 0)
-           (jbb-rust--prev-line-blank-p))
-      0)
-
-     ;; At top level but previous line is indented:
-     ;; use previous line's indent (handles unbalanced braces in fragments)
-     ((and (= (jbb-rust--bracket-depth) 0)
-           (> (jbb-rust--prev-line-indentation) 0))
-      (jbb-rust--prev-line-indentation))
-
      ;; At top level: column 0
+     ;; (But if prev line is indented and doesn't end with }, use its indent
+     ;; to handle code fragments that start mid-block)
      ((= (jbb-rust--bracket-depth) 0)
-      0)
+      (if (and (> (jbb-rust--prev-line-indentation) 0)
+               (not (jbb-rust--prev-line-blank-p))
+               (not (jbb-rust--prev-line-ends-close-brace-p)))
+          (jbb-rust--prev-line-indentation)
+        0))
 
      ;; Inside brackets
      (t
@@ -299,8 +308,12 @@ BRACKET-POS is position of innermost bracket, BRACKET-CHAR its character."
     (let ((outer-brace (jbb-rust--find-enclosing-let-block bracket-pos)))
       (if outer-brace
           (jbb-rust--let-block-base-column outer-brace)
-        (+ (jbb-rust--base-column-before bracket-pos)
-           (jbb-rust--indent-offset)))))
+        (let ((base (+ (jbb-rust--base-column-before bracket-pos)
+                       (jbb-rust--indent-offset))))
+          ;; Add continuation indent if previous line ends with =
+          (if (jbb-rust--prev-line-ends-equals-p)
+              (+ base (jbb-rust--indent-offset))
+            base)))))
    ;; Other brackets: base + offset
    (t
     (+ (jbb-rust--base-column-before bracket-pos)

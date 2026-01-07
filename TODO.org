@@ -1,2 +1,2 @@
-* ask to look for kludges, special cases, inconsistencies
-  Kludges in the code might reveal inconsistencies in the tests.
+* ONGOING fix within-function top-level let statements
+  see new test case at the end of tests-distilled.rs

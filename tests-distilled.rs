@@ -38,17 +38,15 @@ fn example() {
     child_treeids }
     { if let Some ( child_mut )
     = node_ref . tree () . get_mut ( child_treeid ) {
-        add_missing_info_dfs ( child_mut ); }} }}
-}
+        add_missing_info_dfs ( child_mut ); }}
 
 /// pretty
 
 fn example() {
   child_treeids }
-  { if let Some ( child_mut )
-      = node_ref . tree () . get_mut ( child_treeid ) {
-    add_missing_info_dfs ( child_mut ); }} }}
-}
+{ if let Some ( child_mut )
+    = node_ref . tree () . get_mut ( child_treeid ) {
+  add_missing_info_dfs ( child_mut ); }}
 
 ///
 /// tuple element alignment
@@ -67,7 +65,6 @@ fn example() {
             . filter ( | id | subscriber_hides . contains ( id ) )
             . cloned () . collect ();
           hidden } )) }
-}
 
 /// pretty
 
@@ -84,7 +81,6 @@ fn example() {
             . filter ( | id | subscriber_hides . contains ( id ) )
             . cloned () . collect ();
           hidden } )) }
-}
 
 ///
 /// { expr ( paren content
@@ -96,7 +92,6 @@ fn example() {
     { errors.push (
     BufferValidationError::Multiple (
     orgnode.clone() )); }}
-}
 
 /// pretty
 
@@ -114,7 +109,6 @@ fn example() {
   { errors.push (
       BufferValidationError::Multiple (
         orgnode.clone() )); }}
-}
 
 ///
 /// closing brace alignment
@@ -204,7 +198,6 @@ fn example() {
     { Ok(Some(id)) if &id == target_skgid
 => return Ok(true),
       Ok(_) => continue, }}
-}
 
 /// pretty
 
@@ -212,7 +205,6 @@ fn example() {
   { Ok(Some(id)) if &id == target_skgid
       => return Ok(true),
     Ok(_) => continue, }}
-}
 
 ///
 /// match arm brace blocks (body on next line)
@@ -244,7 +236,6 @@ fn example() {
     |mut node_mut| node_mut
 . prepend ( x )
 . id () ) ? };
-}
 
 /// pretty
 
@@ -252,9 +243,8 @@ fn example() {
   with_node_mut (
     tree, node_id,
     |mut node_mut| node_mut
-                   . prepend ( x )
-                   . id () ) ? };
-}
+      . prepend ( x )
+      . id () ) ? };
 
 ///
 /// lambda body on next line
@@ -297,3 +287,23 @@ f(
          . remove ( & ViewRequest::Definitive );
        np . orgnode . metadata . code . indefinitive =
          false; } )
+
+///
+/// within-function top-level let
+///
+
+/// ugly
+
+async fn append_indefinitive_node (
+) -> Result < (), Box<dyn Error> > {
+  let ( skgnode, mut orgnode ) : ( SkgNode, OrgNode ) =
+  skgnode_and_orgnode_from_id (
+    config, driver, node_id ) . await ?; }
+
+/// pretty
+
+async fn append_indefinitive_node (
+) -> Result < (), Box<dyn Error> > {
+  let ( skgnode, mut orgnode ) : ( SkgNode, OrgNode ) =
+    skgnode_and_orgnode_from_id (
+      config, driver, node_id ) . await ?; }
