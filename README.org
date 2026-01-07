@@ -288,3 +288,34 @@ Adjust the path here to your liking.
   The fix carefully distinguishes this from simple cases like ~( x, y )~ where
   the paren at the start of the line IS the one we're inside - those cases should
   NOT get extra indentation.
+
+*** Struct literal field alignment
+
+**** The Problem
+
+  When a struct literal has multiple fields on separate lines, the "brace with
+  inline content" fix incorrectly adds extra indentation to subsequent fields:
+
+  #+begin_src rust
+  parent_mut . append ( NodePair { mskgnode: Some(skgnode),
+                                     orgnode: new_orgnode } )  ;; <-- 2 cols too far
+  #+end_src
+
+  Should be:
+
+  #+begin_src rust
+  parent_mut . append ( NodePair { mskgnode: Some(skgnode),
+                                   orgnode: new_orgnode } )  ;; <-- aligned with mskgnode
+  #+end_src
+
+**** The Cause
+
+  The "brace with inline content" fix (for match arms like ~{ Ok(Some(x))~)
+  was triggering for struct literals like ~{ field: value~, incorrectly adding
+  ~rust-indent-offset~ to the field alignment.
+
+**** The Solution
+
+  The fix detects struct literal fields by checking if the content after ~{~
+  matches the pattern ~identifier:~. In that case, it doesn't add extra
+  indentation, allowing fields to align naturally.

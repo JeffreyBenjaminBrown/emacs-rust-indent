@@ -312,7 +312,28 @@ y )
 (test-indent test-simple-paren-code 3 2 "y in ( x, y ) (no extra indent)")
 
 ;;; ============================================================
-;;; Issue 10: Brace blocks with inline content (match arms)
+;;; Issue 10: Struct literal field alignment
+;;; ============================================================
+
+(defvar test-struct-literal-code "
+fn example() {
+    parent_mut . append ( NodePair { mskgnode: Some(skgnode),
+                                     orgnode: new_orgnode } )
+}
+")
+
+;; Line numbers (1-indexed):
+;; 1: empty
+;; 2: fn example() {
+;; 3:     parent_mut ... { mskgnode: ...  <- mskgnode at col 37
+;; 4:                                     orgnode: ...  <- should be 37, not 39
+
+(message "")
+(message "=== Issue 10: Struct literal field alignment ===")
+(test-indent test-struct-literal-code 4 37 "orgnode (struct field aligns with mskgnode)")
+
+;;; ============================================================
+;;; Issue 11: Brace blocks with inline content (match arms)
 ;;; ============================================================
 
 (defvar test-match-arm-code1 "
@@ -332,7 +353,7 @@ fn example() {
 ;; Both cases: { at col 4, continuation should be at col 8
 
 (message "")
-(message "=== Issue 10: Brace blocks with inline content ===")
+(message "=== Issue 11: Brace blocks with inline content ===")
 (test-indent test-match-arm-code1 4 8 "=> on second line (match arm)")
 (test-indent test-match-arm-code2 4 8 "body on second line (match arm)")
 

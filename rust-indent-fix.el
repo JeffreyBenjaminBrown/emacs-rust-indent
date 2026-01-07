@@ -102,7 +102,9 @@ This detects single-line definitions where the result should be indented further
 (defun rust-indent-fix--enclosing-brace-has-inline-content-p ()
   "Return t if enclosing `{' has non-trivial content on the same line.
 This detects patterns like `{ Ok(Some(x))' or `{ expr' where the brace
-is followed by code on the same line (not just whitespace or comments)."
+is followed by code on the same line (not just whitespace or comments).
+Returns nil for struct literals like `{ field: value, ...' since fields
+should align, not get extra indentation."
   (save-excursion
     (when (> (rust-paren-level) 0)
       (ignore-errors
@@ -110,9 +112,11 @@ is followed by code on the same line (not just whitespace or comments)."
         (when (eq (char-after) ?{)
           (forward-char)
           (skip-chars-forward "[:space:]")
-          ;; Check if there's non-comment content before end of line
+          ;; Check if there's non-comment content before end of line,
+          ;; but NOT a struct literal field (identifier followed by :)
           (and (not (eolp))
-               (not (looking-at "//"))))))))
+               (not (looking-at "//"))
+               (not (looking-at "[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*:"))))))))
 
 (defun rust-indent-fix--enclosing-paren-starts-with-brace-p ()
   "Return t if enclosing `(' or `[' has `{' as its first non-whitespace content."
