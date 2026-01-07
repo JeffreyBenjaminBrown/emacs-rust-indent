@@ -319,3 +319,61 @@ Adjust the path here to your liking.
   The fix detects struct literal fields by checking if the content after ~{~
   matches the pattern ~identifier:~. In that case, it doesn't add extra
   indentation, allowing fields to align naturally.
+
+*** Lambda with inline content
+
+**** The Problem
+
+  When a lambda has its body on the same line, continuation lines align with
+  the lambda instead of being indented beyond it:
+
+  #+begin_src rust
+  with_node_mut (
+    tree, node_id,
+    |mut node_mut| node_mut
+    . prepend ( x )       ;; <-- aligned with |, should be indented
+    . id () ) ? };
+  #+end_src
+
+  Should be:
+
+  #+begin_src rust
+  with_node_mut (
+    tree, node_id,
+    |mut node_mut| node_mut
+      . prepend ( x )     ;; <-- indented beyond |
+      . id () ) ? };
+  #+end_src
+
+**** The Cause
+
+  rust-mode treats the lambda body as ending at the line break, so continuation
+  lines get the same indentation as the lambda itself.
+
+**** The Solution
+
+  The fix searches for lambdas with inline content (~|...|~ followed by an
+  expression) within the enclosing paren context. When found, it calculates
+  the target indentation as the lambda's column plus ~rust-indent-offset~.
+
+  Special cases:
+
+  1. *Lambda at column 0*: When the lambda starts at the beginning of a line
+     (column 0), the continuation aligns with the body expression plus offset
+     for better readability:
+
+     #+begin_src rust
+     |np| np . orgnode . metadata . code . viewRequests
+            . remove ( & ViewRequest::Definitive );  ;; <- aligned with body
+     #+end_src
+
+  2. *Brace blocks with statements*: Inside any ~{ content }~ block,
+     continuations are indented but new statements (lines after ~;~) align
+     with the first statement:
+
+     #+begin_src rust
+     |np| { np . orgnode . metadata . code . viewRequests
+              . remove ( & ViewRequest::Definitive );  ;; <- continuation, indented
+            np . orgnode . metadata . code . indefinitive =  ;; <- new stmt, aligns
+              false; }                                        ;; <- continuation, indented
+     #+end_src

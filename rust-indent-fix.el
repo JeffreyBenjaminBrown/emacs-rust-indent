@@ -179,6 +179,39 @@ Walks up through parens/brackets only, stopping when a brace is encountered."
             (setq found 'stop))))
       (eq found t))))
 
+(defun rust-indent-fix--indent-for-lambda-continuation ()
+  "Calculate indent for a lambda continuation.
+Returns the appropriate indent, or nil if not in a lambda context.
+Excludes lambdas with brace bodies (those should follow brace rules).
+For lambdas at column 0, aligns with body + offset for better readability."
+  (save-excursion
+    (let ((current-line (line-number-at-pos))
+          (result nil))
+      (when (> (rust-paren-level) 0)
+        (ignore-errors
+          (backward-up-list)
+          (when (looking-at "[][()]")
+            (forward-line 1)
+            (while (and (not result) (< (line-number-at-pos) current-line))
+              (beginning-of-line)
+              ;; Match |...| followed by non-whitespace that's NOT {
+              ;; (lambda with brace body should follow brace rules, not lambda rules)
+              (when (re-search-forward "|[^|\n]*|[[:space:]]*\\([^{[:space:]\n]\\)" (line-end-position) t)
+                (let* ((body-start (match-beginning 1))
+                       (lambda-col (save-excursion
+                                     (back-to-indentation)
+                                     (current-column)))
+                       (body-col (save-excursion
+                                   (goto-char body-start)
+                                   (current-column))))
+                  ;; If lambda is at col 0, use body_col + offset for better alignment
+                  ;; Otherwise, use lambda_col + offset
+                  (if (= lambda-col 0)
+                      (setq result (+ body-col rust-indent-offset))
+                    (setq result (+ lambda-col rust-indent-offset)))))
+              (forward-line 1)))))
+      result)))
+
 ;;;; Indentation Calculation for Each Case
 
 (defun rust-indent-fix--indent-for-brace-binding-block (rust-mode-calculated-indent)
@@ -262,13 +295,18 @@ This handles patterns like `{ Ok(Some(x))' in match arms."
              (not (rust-indent-fix--line-starts-with-open-brace-p)))
         (rust-indent-fix--indent-for-paren-on-brace-line rust-mode-calculated-indent))
 
+       ;; Lambda with inline content: |...| expr on a line means continuations
+       ;; should be indented beyond the lambda start
+       ((rust-indent-fix--indent-for-lambda-continuation))
+
        ;; Fix alignment when first paren argument starts with punctuation like &
        ((rust-indent-fix--indent-for-paren-with-punctuation-arg rust-mode-calculated-indent))
 
        ;; Inside `{ content' blocks (like match arms), add extra indentation
-       ;; for continuation lines (but not lines starting with `}')
+       ;; for continuation lines (but not lines starting with `}' or new statements after `;')
        ((and (rust-indent-fix--enclosing-brace-has-inline-content-p)
-             (not (rust-indent-fix--line-starts-with-closing-brace-p)))
+             (not (rust-indent-fix--line-starts-with-closing-brace-p))
+             (not (rust-indent-fix--previous-line-ends-with-semicolon-p)))
         (rust-indent-fix--indent-for-brace-with-inline-content rust-mode-calculated-indent))))))
 
 ;;;; Advice and Public Interface

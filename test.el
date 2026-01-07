@@ -358,6 +358,76 @@ fn example() {
 (test-indent test-match-arm-code2 4 8 "body on second line (match arm)")
 
 ;;; ============================================================
+;;; Issue 12: Lambda with inline content (indented lambda)
+;;; ============================================================
+
+(defvar test-lambda-inline-code "
+fn example() {
+  with_node_mut (
+    tree, node_id,
+    |mut node_mut| node_mut
+    . prepend ( x )
+    . id () ) ? };
+}
+")
+
+;; Line numbers (1-indexed):
+;; 1: empty
+;; 2: fn example() {
+;; 3:   with_node_mut (
+;; 4:     tree, node_id,
+;; 5:     |mut node_mut| node_mut  <- lambda at col 4 with inline body
+;; 6:     . prepend ( x )          <- should be 6 (4 + offset), not 4
+;; 7:     . id () ) ? };
+
+(message "")
+(message "=== Issue 12: Lambda with inline content (indented) ===")
+(test-indent test-lambda-inline-code 6 6 ". prepend (lambda continuation)")
+(test-indent test-lambda-inline-code 7 6 ". id (lambda continuation)")
+
+;;; ============================================================
+;;; Issue 12b: Lambda with inline content (col 0 lambda)
+;;; ============================================================
+
+;; When lambda starts at col 0, continuation should align with body
+(defvar test-lambda-col0-code "
+f(
+|np| np . orgnode . metadata . code . viewRequests
+. remove ( & ViewRequest::Definitive ) )
+")
+
+;; Lambda |np| at col 0, body np at col 5
+;; Continuation . remove should be at col 7 (body_col 5 + offset 2)
+
+(message "")
+(message "=== Issue 12b: Lambda with inline content (col 0) ===")
+(test-indent test-lambda-col0-code 4 7 ". remove (lambda body alignment)")
+
+;;; ============================================================
+;;; Issue 12c: Lambda with brace body - inside brace block
+;;; ============================================================
+
+;; Lambda with { } body: new statements align, continuations are indented
+(defvar test-lambda-brace-body-code "
+f(
+|np| { np . orgnode . metadata . code . viewRequests
+       . remove ( & ViewRequest::Definitive );
+       np . orgnode . metadata . code . indefinitive =
+       false; } )
+")
+
+;; Line 3: |np| { np ...  <- lambda at col 0, { at col 5, np at col 7
+;; Line 4:        . remove  <- continuation, should be 9 (7 + offset)
+;; Line 5:        np ...  <- new statement after ;, should be 7 (aligned with first np)
+;; Line 6:        false;  <- continuation, should be 9 (7 + offset)
+
+(message "")
+(message "=== Issue 12c: Lambda with brace body ===")
+(test-indent test-lambda-brace-body-code 4 9 ". remove (continuation, indented)")
+(test-indent test-lambda-brace-body-code 5 7 "second np (new statement, aligns with first)")
+(test-indent test-lambda-brace-body-code 6 9 "false (continuation, indented)")
+
+;;; ============================================================
 ;;; Summary
 ;;; ============================================================
 
