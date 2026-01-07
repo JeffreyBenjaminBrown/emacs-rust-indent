@@ -1,0 +1,379 @@
+* rust-indent-fix
+
+** Purpose
+
+   Changes how Emacs indents Rust code.
+   Claude Code made all the code.
+   I haven't reviewed it, but it works.
+   Use the tests to make sure it keeps doing so.
+
+** To hot-reload it
+
+Adjust the path here to your liking.
+
+```
+(progn
+  (rust-indent-fix-disable)
+  (load-file "~/hodal/skg/rust-indent/rust-indent-fix.el")
+  (rust-indent-fix-enable))
+```
+
+** History: Problems this code solved
+
+ These are ordered historically --
+ e.g. the first problem it solved was:
+
+*** "{ let" and "{ if let" patterns
+
+**** The Problem
+
+  When you have code like this:
+
+  #+begin_src rust
+    Ok (( { let visible : HashSet < ID > =
+              subscribee_content . iter ()
+              . filter ( | id | ! subscriber_hides . contains ( id ) )
+              . cloned () . collect ();
+            visible },
+  #+end_src
+
+  Pressing TAB reindents the continuation lines to align with the ~let~ keyword column
+  instead of relative to the brace:
+
+  #+begin_src rust
+    Ok (( { let visible : HashSet < ID > =
+            subscribee_content . iter ()    ;; <-- aligned to 'let' column
+            ...
+  #+end_src
+
+  The same issue occurs with ~{ if let~ patterns:
+
+  #+begin_src rust
+      { if let Some ( child_mut )
+        = node_ref . tree () . get_mut ( child_treeid ) {  ;; <-- aligned to 'if'
+  #+end_src
+
+  Should be:
+
+  #+begin_src rust
+      { if let Some ( child_mut )
+          = node_ref . tree () . get_mut ( child_treeid ) {  ;; <-- indented beyond 'if'
+  #+end_src
+
+**** The Solution
+
+  This package provides advice that adjusts rust-mode's indentation.
+
+  The formula for ~{ let }~ blocks:
+  - ~{~ at column 8, ~let~ at column 10
+  - Continuation lines: column 12 (let-col + offset)
+  - Result expression: column 8 (aligns with opening ~{~)
+  - Closing ~}~: column 8 (aligns with opening ~{~)
+
+**** Installation
+
+  1. Copy ~rust-indent-fix.el~ to your load-path
+  2. Add to your init file:
+
+  #+begin_src emacs-lisp
+  (require 'rust-indent-fix)
+  (rust-indent-fix-enable)
+  #+end_src
+
+  Or enable it only for rust-mode:
+
+  #+begin_src emacs-lisp
+  (require 'rust-indent-fix)
+  (add-hook 'rust-mode-hook #'rust-indent-fix-enable)
+  #+end_src
+
+**** Configuration
+
+  - ~rust-indent-fix-enabled~ (default: t) - Set to nil to disable the fix
+
+**** How It Works
+
+  1. After rust-mode calculates indentation, the fix checks if we're inside
+     a ~{ let~ or ~{ if let~ block
+  2. It determines which type of line we're on:
+     - Line starts with ~}~ → align with opening ~{~
+     - Result expression (after ~;~) → align with opening ~{~
+     - Continuation line → add ~rust-indent-offset~
+
+**** Limitations
+
+  - Only affects lines at the immediate level of ~{ let }~ or ~{ if let }~ blocks
+  - Lines nested deeper (inside closures, inner blocks) follow rust-mode's default behavior
+
+**** Functions
+
+  - ~rust-indent-fix-enable~ - Enable the indentation fix
+  - ~rust-indent-fix-disable~ - Disable the indentation fix
+
+**** Test Cases
+
+  The fix correctly handles:
+
+  1. Original case:
+     #+begin_src rust
+           { let yaml_string : String =
+               serde_yaml::to_string (...)  ;; brace-col=6 → cont=10
+               ...
+             yaml_string }                  ;; result at 6 (brace-col)
+     #+end_src
+
+  2. Nested parentheses case:
+     #+begin_src rust
+       Ok (( { let visible : HashSet < ID > =
+                 subscribee_content . iter ()  ;; brace-col=8 → cont=12
+                 . filter (...)
+                 ...
+             visible },                        ;; result at 8 (brace-col)
+     #+end_src
+
+*** tuple element alignment
+
+**** The Problem
+
+  When you have tuple elements that are brace blocks, rust-mode misaligns the second element:
+
+  #+begin_src rust
+    Ok (( { let visible : HashSet < ID > =
+              subscribee_content . iter ()
+              . filter ( | id | ! subscriber_hides . contains ( id ) )
+              . cloned () . collect ();
+            visible },
+            { let hidden : HashSet < ID > =   ;; <-- aligned to 'let', not '{'
+                ...
+  #+end_src
+
+  The second ~{ let~ block gets indented to column 10 (aligning with ~let~ inside the first block)
+  instead of column 8 (aligning with the first ~{~).
+
+**** The Cause
+
+  rust-mode's ~rust-align-to-expr-after-brace~ uses ~forward-word~ to find the first expression
+  after an opening bracket. But ~forward-word~ skips punctuation like ~{~, so for:
+
+  #+begin_src
+  ( { let visible ...
+  #+end_src
+
+  It skips past ~{~ and aligns to ~let~ at column 10, instead of ~{~ at column 8.
+
+**** The Solution
+
+  The fix detects when we're inside a ~(~ or ~[~ whose first non-whitespace content is ~{~.
+  In that case, it returns the column of the ~{~ instead of letting rust-mode align to the
+  word after the brace.
+
+  After the fix:
+
+  #+begin_src rust
+    Ok (( { let visible : HashSet < ID > =
+              subscribee_content . iter ()
+              . filter ( | id | ! subscriber_hides . contains ( id ) )
+              . cloned () . collect ();
+            visible },
+          { let hidden : HashSet < ID > =   ;; <-- now aligned to first '{'
+              subscribee_content . iter ()
+              . filter ( | id | subscriber_hides . contains ( id ) )
+              . cloned () . collect ();
+            hidden } ))
+  #+end_src
+
+  Both ~{ let~ blocks now align at the same column.
+
+*** "{ expr (" patterns
+
+**** The Problem
+
+  When a brace block starts with an expression containing a paren, content inside
+  the paren aligns to the expression instead of being indented beyond it:
+
+  #+begin_src rust
+      { errors.push (
+        BufferValidationError::Multiple (   ;; <-- aligned to 'errors'
+          orgnode.clone() )); }}            ;; <-- aligned to 'BufferValidationError'
+  #+end_src
+
+  Should be:
+
+  #+begin_src rust
+      { errors.push (
+          BufferValidationError::Multiple (   ;; <-- indented beyond 'errors'
+            orgnode.clone() )); }}            ;; <-- indented beyond 'BufferValidationError'
+  #+end_src
+
+**** The Cause
+
+  Same root cause: rust-mode aligns to the first expression after the bracket,
+  which for ~{ errors.push (~ is ~errors~. Content inside the ~(~ then aligns
+  to ~errors~ instead of being indented beyond it.
+
+**** The Solution
+
+  The fix detects when we're inside a paren whose line (or any ancestor paren's
+  line) starts with ~{~. In that case, it adds ~rust-indent-offset~ to rust-mode's
+  calculated indentation. This applies recursively for nested parens.
+
+*** Closing brace alignment
+
+**** The Problem
+
+  When a ~{ let }~ block is used as an expression (e.g., in an ~if~ condition),
+  the closing ~}~ gets misaligned with the opening ~{~:
+
+  #+begin_src rust
+      if { let count: usize =
+             node_ref . children() . count();
+           count
+      } > 1   ;; <-- Emacs wants this at col 4, not col 7
+  #+end_src
+
+  The opening ~{~ is at column 7, but Emacs indents the closing ~}~ to column 4
+  (aligning with ~if~) instead of column 7 (matching the ~{~).
+
+**** The Solution
+
+  The fix detects when a line starts with ~}~ inside a ~{ let }~ or ~{ if let }~
+  block. It uses ~backward-sexp~ to find the matching ~{~ and aligns the ~}~ to
+  that column.
+
+  After the fix:
+
+  #+begin_src rust
+      if { let count: usize =
+             node_ref . children() . count();
+           count
+         } > 1   ;; <-- now at col 7, matching the opening {
+  #+end_src
+
+*** "( expr (" patterns
+
+**** The Problem
+
+  When a paren block starts with an expression containing another paren, content
+  inside the inner paren aligns to the expression instead of being indented beyond it:
+
+  #+begin_src rust
+  let alias_col_id : Option<NodeId> =
+    ( unique_orgnode_child_with_interp (
+      tree, node_id, Interp::AliasCol )   ;; <-- aligned to 'unique_orgnode'
+      . map_err ( |e| e.to_string() ) ? );
+  #+end_src
+
+  Should be:
+
+  #+begin_src rust
+  let alias_col_id : Option<NodeId> =
+    ( unique_orgnode_child_with_interp (
+        tree, node_id, Interp::AliasCol )   ;; <-- indented beyond 'unique_orgnode'
+      . map_err ( |e| e.to_string() ) ? );
+  #+end_src
+
+**** The Cause
+
+  Same root cause as ~{ expr (~: rust-mode aligns to the first expression after
+  the opening bracket, which is ~unique_orgnode_child_with_interp~. Content inside
+  the inner ~(~ then aligns to that expression instead of being indented beyond it.
+
+**** The Solution
+
+  The fix extends the ~{ expr (~ logic to also detect when we're inside a paren
+  whose line starts with ~(~ or ~[~ (with inline content), where that outer bracket
+  is different from the one we're inside. In that case, it adds ~rust-indent-offset~
+  to rust-mode's calculated indentation.
+
+  The fix carefully distinguishes this from simple cases like ~( x, y )~ where
+  the paren at the start of the line IS the one we're inside - those cases should
+  NOT get extra indentation.
+
+*** Struct literal field alignment
+
+**** The Problem
+
+  When a struct literal has multiple fields on separate lines, the "brace with
+  inline content" fix incorrectly adds extra indentation to subsequent fields:
+
+  #+begin_src rust
+  parent_mut . append ( NodePair { mskgnode: Some(skgnode),
+                                     orgnode: new_orgnode } )  ;; <-- 2 cols too far
+  #+end_src
+
+  Should be:
+
+  #+begin_src rust
+  parent_mut . append ( NodePair { mskgnode: Some(skgnode),
+                                   orgnode: new_orgnode } )  ;; <-- aligned with mskgnode
+  #+end_src
+
+**** The Cause
+
+  The "brace with inline content" fix (for match arms like ~{ Ok(Some(x))~)
+  was triggering for struct literals like ~{ field: value~, incorrectly adding
+  ~rust-indent-offset~ to the field alignment.
+
+**** The Solution
+
+  The fix detects struct literal fields by checking if the content after ~{~
+  matches the pattern ~identifier:~. In that case, it doesn't add extra
+  indentation, allowing fields to align naturally.
+
+*** Lambda with inline content
+
+**** The Problem
+
+  When a lambda has its body on the same line, continuation lines align with
+  the lambda instead of being indented beyond it:
+
+  #+begin_src rust
+  with_node_mut (
+    tree, node_id,
+    |mut node_mut| node_mut
+    . prepend ( x )       ;; <-- aligned with |, should be indented
+    . id () ) ? };
+  #+end_src
+
+  Should be:
+
+  #+begin_src rust
+  with_node_mut (
+    tree, node_id,
+    |mut node_mut| node_mut
+      . prepend ( x )     ;; <-- indented beyond |
+      . id () ) ? };
+  #+end_src
+
+**** The Cause
+
+  rust-mode treats the lambda body as ending at the line break, so continuation
+  lines get the same indentation as the lambda itself.
+
+**** The Solution
+
+  The fix searches for lambdas with inline content (~|...|~ followed by an
+  expression) within the enclosing paren context. When found, it calculates
+  the target indentation as the lambda's column plus ~rust-indent-offset~.
+
+  Special cases:
+
+  1. *Lambda at column 0*: When the lambda starts at the beginning of a line
+     (column 0), the continuation aligns with the body expression plus offset
+     for better readability:
+
+     #+begin_src rust
+     |np| np . orgnode . metadata . code . viewRequests
+            . remove ( & ViewRequest::Definitive );  ;; <- aligned with body
+     #+end_src
+
+  2. *Brace blocks with statements*: Inside any ~{ content }~ block,
+     continuations are indented but new statements (lines after ~;~) align
+     with the first statement:
+
+     #+begin_src rust
+     |np| { np . orgnode . metadata . code . viewRequests
+              . remove ( & ViewRequest::Definitive );  ;; <- continuation, indented
+            np . orgnode . metadata . code . indefinitive =  ;; <- new stmt, aligns
+              false; }                                        ;; <- continuation, indented
+     #+end_src

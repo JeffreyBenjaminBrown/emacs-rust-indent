@@ -404,6 +404,31 @@ f(
 (test-indent test-lambda-col0-code 4 7 ". remove (lambda body alignment)")
 
 ;;; ============================================================
+;;; Issue 12d: Lambda with body on next line
+;;; ============================================================
+
+;; When lambda params are on their own line, body on next line should be indented
+;; Body gets 2x offset from lambda for visual distinction
+(defvar test-lambda-body-next-line-code "
+f(
+|mut col_mut|
+col_mut . append (
+  NodePair { mskgnode: None,
+             orgnode: x })
+  . id () )
+")
+
+;; Line 3: |mut col_mut|  <- lambda at col 0, no body on this line
+;; Line 4: col_mut . append  <- body, should be 4 (0 + 2*offset)
+;; Line 5:   NodePair  <- inside paren, should be 6 (4 + offset)
+;; Line 7:   . id ()  <- continuation, should be 4 (same as body)
+
+(message "")
+(message "=== Issue 12d: Lambda with body on next line ===")
+(test-indent test-lambda-body-next-line-code 4 4 "col_mut (lambda body on next line)")
+(test-indent test-lambda-body-next-line-code 7 4 ". id (continuation)")
+
+;;; ============================================================
 ;;; Issue 12c: Lambda with brace body - inside brace block
 ;;; ============================================================
 

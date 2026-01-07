@@ -181,9 +181,10 @@ Walks up through parens/brackets only, stopping when a brace is encountered."
 
 (defun rust-indent-fix--indent-for-lambda-continuation ()
   "Calculate indent for a lambda continuation.
-Returns the appropriate indent, or nil if not in a lambda context.
+Returns (indent . body-on-next-line-p), or nil if not in a lambda context.
 Excludes lambdas with brace bodies (those should follow brace rules).
-For lambdas at column 0, aligns with body + offset for better readability."
+Handles both inline body (`|x| expr`) and body on next line (`|x|\\nexpr`).
+For lambdas at column 0 with inline body, aligns with body + offset."
   (save-excursion
     (let ((current-line (line-number-at-pos))
           (result nil))
@@ -194,9 +195,10 @@ For lambdas at column 0, aligns with body + offset for better readability."
             (forward-line 1)
             (while (and (not result) (< (line-number-at-pos) current-line))
               (beginning-of-line)
-              ;; Match |...| followed by non-whitespace that's NOT {
-              ;; (lambda with brace body should follow brace rules, not lambda rules)
-              (when (re-search-forward "|[^|\n]*|[[:space:]]*\\([^{[:space:]\n]\\)" (line-end-position) t)
+              (cond
+               ;; Case 1: |...| followed by non-whitespace that's NOT {
+               ;; (lambda with inline body, but not brace body)
+               ((re-search-forward "|[^|\n]*|[[:space:]]*\\([^{[:space:]\n]\\)" (line-end-position) t)
                 (let* ((body-start (match-beginning 1))
                        (lambda-col (save-excursion
                                      (back-to-indentation)
@@ -206,9 +208,20 @@ For lambdas at column 0, aligns with body + offset for better readability."
                                    (current-column))))
                   ;; If lambda is at col 0, use body_col + offset for better alignment
                   ;; Otherwise, use lambda_col + offset
+                  ;; Return cons with nil to indicate inline body
                   (if (= lambda-col 0)
-                      (setq result (+ body-col rust-indent-offset))
-                    (setq result (+ lambda-col rust-indent-offset)))))
+                      (setq result (cons (+ body-col rust-indent-offset) nil))
+                    (setq result (cons (+ lambda-col rust-indent-offset) nil)))))
+               ;; Case 2: |...| at end of line (body on next line)
+               ;; Body gets 2x offset from lambda for visual distinction
+               ((save-excursion
+                  (beginning-of-line)
+                  (re-search-forward "|[^|\n]*|[[:space:]]*$" (line-end-position) t))
+                (let ((lambda-col (save-excursion
+                                    (back-to-indentation)
+                                    (current-column))))
+                  ;; Return cons with t to indicate body on next line
+                  (setq result (cons (+ lambda-col (* 2 rust-indent-offset)) t)))))
               (forward-line 1)))))
       result)))
 
@@ -296,8 +309,12 @@ This handles patterns like `{ Ok(Some(x))' in match arms."
         (rust-indent-fix--indent-for-paren-on-brace-line rust-mode-calculated-indent))
 
        ;; Lambda with inline content: |...| expr on a line means continuations
-       ;; should be indented beyond the lambda start
-       ((rust-indent-fix--indent-for-lambda-continuation))
+       ;; should be indented beyond the lambda start.
+       ;; For body-on-next-line lambdas, body already gets 2x offset, so
+       ;; continuations stay at that level.
+       ((let ((lambda-result (rust-indent-fix--indent-for-lambda-continuation)))
+          (when lambda-result
+            (car lambda-result))))
 
        ;; Fix alignment when first paren argument starts with punctuation like &
        ((rust-indent-fix--indent-for-paren-with-punctuation-arg rust-mode-calculated-indent))
