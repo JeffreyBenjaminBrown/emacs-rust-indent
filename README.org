@@ -3,9 +3,10 @@ Adjust the path here to your liking.
 
 #+begin_src elisp
 (progn
-  (rust-indent-fix-disable)
-  (load-file "~/hodal/skg/rust-indent/rust-indent-fix.el")
-  (rust-indent-fix-enable))
+  (when (fboundp 'jbb-rust-indent-disable)
+    (jbb-rust-indent-disable))
+  (load-file "~/hodal/skg/rust-indent/jbb-rust-indent.el")
+  (jbb-rust-indent-enable))
 #+end_src
 * How to read and update the tests
   tests-distilled.rs is the source of truth for tests.
